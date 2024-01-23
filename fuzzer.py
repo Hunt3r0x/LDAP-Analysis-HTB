@@ -36,7 +36,7 @@ def main(charset_path, thread_count):
     found_chars = ""
     repeat_count = 0
     last_char = ""
-    max_repeats = 4
+    max_repeats = 10
     skip_count = [6]
     add_star = [True]
     stop_event = threading.Event()
@@ -89,7 +89,7 @@ def main(charset_path, thread_count):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="LDAP injection fuzzer script for password extraction")
     parser.add_argument("-c", "--charset", required=True, help="wordlist")
-    parser.add_argument("-t", "--threads", type=int, default=100, help="threads")
+    parser.add_argument("-t", "--threads", type=int, default=20, help="threads")
     args = parser.parse_args()
 
     main(args.charset, args.threads)
